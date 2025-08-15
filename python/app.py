@@ -10,9 +10,9 @@ import os
 app = Flask(__name__)
 schedule_instance = schedule
 
-# --- PONTO CRÍTICO: Caminho do arquivo de configuração ---
-caminho_do_script = os.path.dirname(os.path.abspath(__file__))
-caminho_arquivo_ini = os.path.join(caminho_do_script, 'agendador.ini')
+# --- PONTO CRÍTICO CORRIGIDO: Caminho do arquivo de configuração ---
+# O caminho agora aponta diretamente para o local onde o Apache o espera.
+caminho_arquivo_ini = '/var/www/html/agendador.ini'
 print(f"DEBUG: O caminho do arquivo .ini será: {caminho_arquivo_ini}")
 
 
@@ -20,6 +20,8 @@ def executar_main_py():
     """Função para executar o script main.py."""
     print("Iniciando a execução do main.py...")
     try:
+        # A API Python e o script principal estão no mesmo diretório
+        caminho_do_script = os.path.dirname(os.path.abspath(__file__))
         caminho_main_py = os.path.join(caminho_do_script, 'main.py')
         subprocess.run(['python', caminho_main_py], check=True)
         print("Execução do main.py concluída com sucesso!")
@@ -40,6 +42,7 @@ def salvar_configuracao_ini(dias_semana, hora_agendada):
         'hora_execucao': hora_agendada
     }
     try:
+        # A escrita agora acontece no caminho corrigido
         with open(caminho_arquivo_ini, 'w') as configfile:
             config.write(configfile)
         print(f"Nova configuração salva com sucesso em '{caminho_arquivo_ini}'.")
