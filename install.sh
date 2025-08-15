@@ -1,78 +1,68 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Este script automatiza a instalação do Sistema de Backup em ambientes Linux (Debian/Ubuntu).
-# Ele instala as dependências, clona o projeto e configura os serviços.
+# ==========================================
+# Instalador do Sistema de Backup de Rede
+# Autor: Wanderon Ribas
+# Compatível com: Debian / Ubuntu
+# ==========================================
 
-# --- Etapa 1: Pré-requisitos e Verificações ---
-echo "--- Verificando permissões de root ---"
+set -euo pipefail
+
+# --- Etapa 1: Permissões e pré-requisitos ---
+echo "=== Verificando permissões de root ==="
 if [[ $EUID -ne 0 ]]; then
-   echo "Este script deve ser executado como root. Use 'sudo'." 
+   echo "Este script deve ser executado como root. Use 'sudo'."
    exit 1
 fi
 
-echo "--- Atualizando o sistema e instalando dependências essenciais ---"
+echo "=== Atualizando pacotes e instalando dependências ==="
 apt-get update -y
-apt-get install -y git apache2 php libapache2-mod-php php-curl php-mysqli python3 python3-pip mysql-server
+apt-get install -y git apache2 php libapache2-mod-php php-curl php-mysqli \
+                   python3 python3-pip mysql-server
 
-# Verifica se os pacotes foram instalados corretamente
-if [ $? -ne 0 ]; then
-    echo "Erro: A instalação de pacotes falhou. Verifique sua conexão e tente novamente."
-    exit 1
-fi
+# --- Etapa 2: Configuração do MySQL ---
+echo "=== Configurando MySQL ==="
+read -sp "Digite a senha do usuário root do MySQL: " MYSQL_PASS
+echo
+mysql -u root -p"$MYSQL_PASS" -e "CREATE DATABASE IF NOT EXISTS net_backup;"
+mysql -u root -p"$MYSQL_PASS" -e "CREATE USER IF NOT EXISTS 'root_user'@'localhost' IDENTIFIED BY '$MYSQL_PASS';"
+mysql -u root -p"$MYSQL_PASS" -e "GRANT ALL PRIVILEGES ON net_backup.* TO 'root_user'@'localhost';"
+mysql -u root -p"$MYSQL_PASS" -e "FLUSH PRIVILEGES;"
+echo "Banco de dados e usuário configurados."
 
-# --- Etapa 2: Configuração do Servidor MySQL ---
-echo "--- Configurando o MySQL (você precisará definir uma senha) ---"
-# NOTA: Em algumas versões do MySQL, esta etapa pode ser interativa.
-# Certifique-se de definir uma senha forte.
-mysql_secure_installation
+# --- Etapa 3: Clonando e instalando a aplicação ---
+echo "=== Clonando repositório ==="
+TMP_DIR=$(mktemp -d)
+git clone https://github.com/WanderonRibas/Backup_rede.git "$TMP_DIR"
 
-# Cria o banco de dados e o usuário para a aplicação
-echo "--- Criando o banco de dados 'net_backup' e o usuário 'root_user' ---"
-# NOTA: O script abaixo usa a senha padrão 'root_password'.
-# Altere se a senha que você definiu for diferente.
-mysql -u root -proot_password -e "CREATE DATABASE IF NOT EXISTS net_backup;"
-mysql -u root -proot_password -e "CREATE USER 'root_user'@'localhost' IDENTIFIED BY 'root_password';"
-mysql -u root -proot_password -e "GRANT ALL PRIVILEGES ON net_backup.* TO 'root_user'@'localhost';"
-mysql -u root -proot_password -e "FLUSH PRIVILEGES;"
-echo "Banco de dados e usuário criados com sucesso."
-
-# --- Etapa 3: Instalação da Aplicação ---
-echo "--- Clonando o repositório do GitHub ---"
-# URL do seu repositório
-git clone https://github.com/WanderonRibas/Backup_rede.git /tmp/sistema-backup
-
-echo "--- Copiando arquivos para o diretório do servidor web ---"
-# Apaga o diretório padrão e copia o novo conteúdo
+echo "=== Copiando arquivos para o Apache ==="
 rm -rf /var/www/html/*
-cp -r /tmp/sistema-backup/php/* /var/www/html/
+cp -r "$TMP_DIR"/*.php /var/www/html/
+cp -r "$TMP_DIR"/static /var/www/html/
 
-# Configura as permissões de escrita para a pasta de backups e agendador.ini
-# O Apache (www-data) precisa de permissão para ler e escrever.
-echo "--- Configurando permissões de arquivos ---"
+# Criando pasta de backups e arquivo agendador.ini
 mkdir -p /var/www/html/backups
-chmod 777 /var/www/html/backups
 touch /var/www/html/agendador.ini
-chmod 777 /var/www/html/agendador.ini
+chown -R www-data:www-data /var/www/html
+chmod -R 775 /var/www/html/backups
+chmod 664 /var/www/html/agendador.ini
 
-# --- Etapa 4: Configuração da Aplicação Python ---
-echo "--- Instalando bibliotecas Python (Flask, schedule) ---"
-pip3 install flask schedule
+# --- Etapa 4: Configuração da API Python ---
+echo "=== Instalando dependências Python ==="
+mkdir -p /opt/sistema-backup-python
+cp -r "$TMP_DIR"/python/* /opt/sistema-backup-python/
+pip3 install -r /opt/sistema-backup-python/requirements.txt
 
-echo "--- Iniciando a API Python em segundo plano ---"
-# O script 'app.py' será iniciado para que a API esteja sempre ativa.
-# A saída será redirecionada para um arquivo de log.
-nohup python3 /tmp/sistema-backup/python/app.py > /var/log/backup-api.log 2>&1 &
-echo "API Python iniciada. Verifique o log em /var/log/backup-api.log"
+echo "=== Iniciando API Python ==="
+nohup python3 /opt/sistema-backup-python/app.py > /var/log/backup-api.log 2>&1 &
+echo "API Python iniciada. Log em /var/log/backup-api.log"
 
-# --- Etapa 5: Finalização e Mensagem de Sucesso ---
-echo "--- Limpando arquivos temporários ---"
-rm -rf /tmp/sistema-backup
-
-echo "--- Reiniciando o Apache ---"
+# --- Etapa 5: Finalização ---
+rm -rf "$TMP_DIR"
 systemctl restart apache2
-echo "Apache reiniciado."
 
-echo "==================================================="
+echo "=========================================="
 echo "Instalação concluída com sucesso!"
-echo "Acesse a aplicação em http://localhost ou seu IP do servidor."
-echo "==================================================="
+echo "Acesse: http://SEU-IP ou http://localhost"
+echo "Usuário do MySQL: root_user / Senha: (a mesma informada)"
+echo "=========================================="
