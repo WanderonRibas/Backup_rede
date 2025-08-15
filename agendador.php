@@ -49,8 +49,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 }
 
 // --- Lógica para ler o arquivo .ini e exibir na página ---
-// Esta parte lê a configuração que a API Python salvou por último.
-$arquivo_ini = 'python/agendador.ini';
+// CÓDIGO CORRIGIDO: O caminho agora aponta para o diretório correto.
+$arquivo_ini = '/var/www/html/agendador.ini';
 $dias_semana_salvos = [];
 $hora_execucao_salva = '';
 
